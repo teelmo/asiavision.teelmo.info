@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { mutate } from "@/lib/store";
+import { COUNTRY_IDS } from "@/lib/countries";
 import { validateBallot } from "@/lib/scoring";
 
 export const dynamic = "force-dynamic";
@@ -12,44 +13,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing voter token." }, { status: 400 });
   }
 
-  const voter = await prisma.voter.findUnique({ where: { token } });
-  if (!voter) {
-    return NextResponse.json({ error: "Voting link not recognized." }, { status: 404 });
-  }
-  if (voter.hasVoted) {
-    return NextResponse.json({ error: "You've already voted — thanks!" }, { status: 409 });
-  }
-
-  const settings = await prisma.pollSettings.findUnique({ where: { id: 1 } });
-  if (settings?.isFinalized) {
-    return NextResponse.json({ error: "Voting has closed." }, { status: 403 });
-  }
-
-  const countries = await prisma.country.findMany({ select: { id: true } });
-  const validIds = new Set(countries.map((c) => c.id));
-
-  const result = validateBallot(body?.entries, validIds);
+  const result = validateBallot(body?.entries, COUNTRY_IDS);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
+  const entries = result.entries;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.vote.create({
-      data: {
-        voterId: voter.id,
-        entries: {
-          create: result.entries.map((e) => ({ countryId: e.countryId, points: e.points })),
-        },
-      },
-    });
-    await tx.voter.update({ where: { id: voter.id }, data: { hasVoted: true } });
-
-    const votedCount = await tx.voter.count({ where: { hasVoted: true } });
-    const current = await tx.pollSettings.findUnique({ where: { id: 1 } });
-    if (current && current.voterThreshold > 0 && votedCount >= current.voterThreshold && !current.isFinalized) {
-      await tx.pollSettings.update({ where: { id: 1 }, data: { isFinalized: true } });
+  const outcome = await mutate((db) => {
+    const voter = db.voters.find((v) => v.token === token);
+    if (!voter) {
+      return { error: "Voting link not recognized.", status: 404 } as const;
     }
+    if (voter.hasVoted) {
+      return { error: "You've already voted — thanks!", status: 409 } as const;
+    }
+    if (db.settings.isFinalized) {
+      return { error: "Voting has closed.", status: 403 } as const;
+    }
+
+    voter.hasVoted = true;
+    db.votes.push({ voterId: voter.id, entries, createdAt: new Date().toISOString() });
+
+    const votedCount = db.voters.filter((v) => v.hasVoted).length;
+    if (db.settings.voterThreshold > 0 && votedCount >= db.settings.voterThreshold) {
+      db.settings.isFinalized = true;
+    }
+
+    return { ok: true } as const;
   });
 
+  if ("error" in outcome) {
+    return NextResponse.json({ error: outcome.error }, { status: outcome.status });
+  }
   return NextResponse.json({ ok: true });
 }

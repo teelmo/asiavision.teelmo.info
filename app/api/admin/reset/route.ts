@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { mutate } from "@/lib/store";
 import { isAdminRequest } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
@@ -10,12 +10,12 @@ export async function POST() {
     return NextResponse.json({ error: "Not authorized." }, { status: 401 });
   }
 
-  await prisma.$transaction([
-    prisma.voteEntry.deleteMany({}),
-    prisma.vote.deleteMany({}),
-    prisma.voter.updateMany({ data: { hasVoted: false } }),
-    prisma.pollSettings.update({ where: { id: 1 }, data: { isFinalized: false, isRevealed: false } }),
-  ]);
+  await mutate((db) => {
+    db.votes = [];
+    db.voters.forEach((v) => (v.hasVoted = false));
+    db.settings.isFinalized = false;
+    db.settings.isRevealed = false;
+  });
 
   return NextResponse.json({ ok: true });
 }

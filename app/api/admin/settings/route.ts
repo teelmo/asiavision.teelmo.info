@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { mutate } from "@/lib/store";
 import { isAdminRequest } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
@@ -15,19 +15,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "voterThreshold must be a non-negative integer." }, { status: 400 });
   }
 
-  const settings = await prisma.pollSettings.upsert({
-    where: { id: 1 },
-    update: { voterThreshold },
-    create: { id: 1, voterThreshold },
-  });
-
-  // Threshold lowered below an already-reached count should still finalize.
-  if (!settings.isFinalized && voterThreshold > 0) {
-    const votedCount = await prisma.voter.count({ where: { hasVoted: true } });
-    if (votedCount >= voterThreshold) {
-      await prisma.pollSettings.update({ where: { id: 1 }, data: { isFinalized: true } });
+  await mutate((db) => {
+    db.settings.voterThreshold = voterThreshold;
+    // Threshold lowered below an already-reached count should still finalize.
+    if (!db.settings.isFinalized && voterThreshold > 0) {
+      const votedCount = db.voters.filter((v) => v.hasVoted).length;
+      if (votedCount >= voterThreshold) {
+        db.settings.isFinalized = true;
+      }
     }
-  }
+  });
 
   return NextResponse.json({ ok: true });
 }

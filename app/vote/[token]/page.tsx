@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { getDB } from "@/lib/store";
+import { COUNTRIES } from "@/lib/countries";
 import { BallotForm } from "@/components/BallotForm";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,8 @@ function Shell({ title, body }: { title: string; body: string }) {
 }
 
 export default async function VotePage({ params }: { params: { token: string } }) {
-  const voter = await prisma.voter.findUnique({ where: { token: params.token } });
+  const db = await getDB();
+  const voter = db.voters.find((v) => v.token === params.token);
 
   if (!voter) {
     return (
@@ -33,8 +35,7 @@ export default async function VotePage({ params }: { params: { token: string } }
     );
   }
 
-  const settings = await prisma.pollSettings.findUnique({ where: { id: 1 } });
-  if (settings?.isFinalized) {
+  if (db.settings.isFinalized) {
     return (
       <Shell
         title="Voting is closed"
@@ -42,8 +43,6 @@ export default async function VotePage({ params }: { params: { token: string } }
       />
     );
   }
-
-  const countries = await prisma.country.findMany({ orderBy: { order: "asc" } });
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-6 py-12">
@@ -55,7 +54,7 @@ export default async function VotePage({ params }: { params: { token: string } }
           else gets nothing. Choices are final once submitted.
         </p>
       </div>
-      <BallotForm token={voter.token} countries={countries} />
+      <BallotForm token={voter.token} countries={COUNTRIES} />
     </main>
   );
 }

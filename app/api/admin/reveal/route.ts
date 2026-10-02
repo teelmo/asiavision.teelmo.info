@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { mutate } from "@/lib/store";
 import { isAdminRequest } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
@@ -12,11 +12,16 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const revealed = Boolean(body?.revealed);
 
-  const settings = await prisma.pollSettings.findUnique({ where: { id: 1 } });
-  if (revealed && !settings?.isFinalized) {
-    return NextResponse.json({ error: "Voting isn't finalized yet." }, { status: 400 });
-  }
+  const outcome = await mutate((db) => {
+    if (revealed && !db.settings.isFinalized) {
+      return { error: "Voting isn't finalized yet." } as const;
+    }
+    db.settings.isRevealed = revealed;
+    return { ok: true } as const;
+  });
 
-  await prisma.pollSettings.update({ where: { id: 1 }, data: { isRevealed: revealed } });
+  if ("error" in outcome) {
+    return NextResponse.json({ error: outcome.error }, { status: 400 });
+  }
   return NextResponse.json({ ok: true });
 }

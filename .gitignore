@@ -8,8 +8,8 @@ npm-debug.log*
 .env
 .env*.local
 
-prisma/dev.db
-prisma/dev.db-journal
+data/db.json
+data/*.tmp
 
 .DS_Store
 *.pem

@@ -1,6 +1,5 @@
-import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { mutate, newToken, type VoterRecord } from "@/lib/store";
 import { isAdminRequest } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
@@ -25,11 +24,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Provide at least one voter name." }, { status: 400 });
   }
 
-  const created = await prisma.$transaction(
-    cleanNames.map((name) =>
-      prisma.voter.create({ data: { name, token: randomUUID() } })
-    )
-  );
+  const created = await mutate((db) => {
+    const newVoters: VoterRecord[] = cleanNames.map((name) => ({
+      id: db.nextVoterId++,
+      name,
+      token: newToken(),
+      hasVoted: false,
+      createdAt: new Date().toISOString(),
+    }));
+    db.voters.push(...newVoters);
+    return newVoters;
+  });
 
   return NextResponse.json({ voters: created });
 }

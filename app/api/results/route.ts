@@ -1,57 +1,44 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getDB } from "@/lib/store";
+import { COUNTRIES } from "@/lib/countries";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const [settings, countries, votedCount, totalVoters] = await Promise.all([
-    prisma.pollSettings.findUnique({ where: { id: 1 } }),
-    prisma.country.findMany({ orderBy: { order: "asc" } }),
-    prisma.voter.count({ where: { hasVoted: true } }),
-    prisma.voter.count(),
-  ]);
+  const db = await getDB();
+  const { settings, voters, votes } = db;
 
-  const threshold = settings?.voterThreshold ?? 0;
-  const isFinalized = settings?.isFinalized ?? false;
-  const isRevealed = settings?.isRevealed ?? false;
+  const votedCount = voters.filter((v) => v.hasVoted).length;
+  const progress = { votedCount, totalVoters: voters.length, threshold: settings.voterThreshold };
 
-  const progress = { votedCount, totalVoters, threshold };
-
-  if (isFinalized && !isRevealed) {
+  if (settings.isFinalized && !settings.isRevealed) {
     return NextResponse.json({ state: "locked", ...progress });
   }
 
-  const sums = await prisma.voteEntry.groupBy({
-    by: ["countryId"],
-    _sum: { points: true },
-  });
-  const pointsByCountry = new Map(sums.map((s) => [s.countryId, s._sum.points ?? 0]));
+  const pointsByCountry = new Map<number, number>();
+  const breakdownByCountry = new Map<number, Record<string, number>>();
+  for (const vote of votes) {
+    for (const entry of vote.entries) {
+      pointsByCountry.set(entry.countryId, (pointsByCountry.get(entry.countryId) ?? 0) + entry.points);
+      const breakdown = breakdownByCountry.get(entry.countryId) ?? {};
+      breakdown[String(entry.points)] = (breakdown[String(entry.points)] ?? 0) + 1;
+      breakdownByCountry.set(entry.countryId, breakdown);
+    }
+  }
 
-  const ranked = [...countries].sort((a, b) => {
+  const ranked = [...COUNTRIES].sort((a, b) => {
     const diff = (pointsByCountry.get(b.id) ?? 0) - (pointsByCountry.get(a.id) ?? 0);
     if (diff !== 0) return diff;
-    return a.order - b.order;
+    return a.id - b.id;
   });
 
-  if (!isFinalized) {
+  if (!settings.isFinalized) {
     // Live, anonymous: order only, never the numbers behind it.
     return NextResponse.json({
       state: "live",
       ranking: ranked.map((c) => ({ id: c.id, code: c.code, name: c.name, flag: c.flag })),
       ...progress,
     });
-  }
-
-  // Finalized and revealed: full breakdown.
-  const breakdown = await prisma.voteEntry.groupBy({
-    by: ["countryId", "points"],
-    _count: { _all: true },
-  });
-  const breakdownByCountry = new Map<number, Record<string, number>>();
-  for (const row of breakdown) {
-    const map = breakdownByCountry.get(row.countryId) ?? {};
-    map[String(row.points)] = row._count._all;
-    breakdownByCountry.set(row.countryId, map);
   }
 
   return NextResponse.json({

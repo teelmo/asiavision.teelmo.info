@@ -4,7 +4,8 @@ A small Next.js app for running Eurovision-style voting among your friends.
 
 ## How voting works
 
-- There are 11 participating countries (edit the list in `prisma/seed.ts` — see below).
+- There are 11 participating countries (edit the list in `lib/countries.ts` — see
+  below).
 - Each voter gives out exactly four scores: **12, 10, 8, and -4 points**, each to a
   different country. Every other country gets nothing from that voter.
 - Each voter gets a unique, one-time voting link. They can't see anyone else's votes
@@ -19,6 +20,22 @@ A small Next.js app for running Eurovision-style voting among your friends.
   results page switches to the full scoreboard with points. Hitting it again hides
   the board, in case you want to re-run the reveal live.
 
+## Storage: just a JSON file
+
+No database to install. All voter/vote/settings state lives in a single file at
+`data/db.json`, created automatically on first run. Writes go through a small
+in-process lock (`lib/store.ts`) so two people voting at the same instant can't
+corrupt the file.
+
+That one simplification comes with one real constraint: **the app must run as a
+single, long-lived Node process** (e.g. `npm start` on a VPS or always-on box) —
+not spread across multiple serverless instances, which wouldn't share the lock or
+necessarily share a writable disk. A normal `npm run dev` / `npm start` setup is
+exactly that, so this only matters if you deploy to something like Vercel.
+
+Backing up or inspecting state is just `cat data/db.json` or `cp` it somewhere.
+Wiping everything (voters included) for a clean slate: `npm run data:wipe`.
+
 ## First-time setup
 
 ```bash
@@ -30,13 +47,6 @@ Edit `.env`:
 - `ADMIN_PASSWORD` — the password you (the host) use to log in at `/admin`.
 - `ADMIN_SESSION_SECRET` — any random string; generate one with `openssl rand -hex 32`.
 
-Then create and seed the database:
-
-```bash
-npm run db:push
-npm run db:seed
-```
-
 Run it:
 
 ```bash
@@ -47,18 +57,18 @@ Open http://localhost:3000.
 
 ## Editing the country lineup
 
-`prisma/seed.ts` currently ships with a **placeholder** list of 11 countries — swap
-it for the real Asiavision 2026 lineup before you start collecting real votes:
+`lib/countries.ts` currently ships with a **placeholder** list of 11 countries —
+swap it for the real Asiavision 2026 lineup before you start collecting real votes:
 
 ```ts
-const COUNTRIES = [
-  { code: "JPN", name: "Japan", flag: "🇯🇵" },
+export const COUNTRIES: Country[] = [
+  { id: 1, code: "JPN", name: "Japan", flag: "🇯🇵" },
   // ...
 ];
 ```
 
-After editing, re-run `npm run db:seed` (it's idempotent — safe to re-run any time;
-it won't touch existing votes).
+Keep the `id` values stable once voting has started — they're what ties existing
+votes in `data/db.json` to a country. Restart the app after editing this file.
 
 ## Running the show
 
@@ -78,22 +88,32 @@ it won't touch existing votes).
 
 ## Deploying so your friends can reach it
 
-This is a normal Next.js app with a local SQLite database — easiest options:
+This is a normal Next.js app with everything in a local JSON file — easiest options:
 
-- **Fly.io / Railway / Render**: deploy with a persistent volume for the SQLite file
-  (`prisma/dev.db`), set the env vars from `.env.example`.
-- **Vercel**: works, but Vercel's filesystem is ephemeral — swap `DATABASE_URL` for a
-  hosted Postgres/SQLite (e.g. Turso, Neon) instead of the local file in that case.
+- **A VPS / home server / Fly.io / Railway / Render**: run `npm run build && npm
+  start` as a persistent process, with `data/` on a persistent disk/volume.
+- **Vercel or other serverless hosts**: avoid — the filesystem isn't guaranteed
+  persistent or shared across instances, which breaks the whole point of this
+  storage model. If you want serverless, you'd want a real database instead (see
+  below).
 
 Whatever you choose, serve it over **HTTPS** — the admin login cookie is marked
 `Secure` in production and won't be sent over plain HTTP (localhost is exempted by
 browsers, so local testing works fine either way).
 
+### If you outgrow the JSON file
+
+If this ever needs to run across multiple instances, or you'd just rather use a
+real database you already run (e.g. a MariaDB/MySQL instance), swap `lib/store.ts`
+for queries against that database — the rest of the app (API routes, pages) only
+calls the handful of functions it exports (`getDB`, `mutate`, `newToken`), so the
+storage layer is isolated from everything else.
+
 ## Tech notes
 
 - Next.js 14 (App Router) + TypeScript + Tailwind CSS.
-- SQLite via Prisma — fine for a friend-group-sized poll; swap the Prisma
-  datasource for Postgres if you outgrow it.
+- State lives in `data/db.json`, read/written through `lib/store.ts`'s locked
+  read-modify-write helper — no database server, no native dependencies.
 - Live results use polling (every 4s) rather than WebSockets — simple and plenty
   fast for this scale.
 - Admin auth is a single shared password + signed cookie (`lib/admin-auth.ts`) —
