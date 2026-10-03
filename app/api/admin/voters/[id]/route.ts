@@ -4,12 +4,13 @@ import { isAdminRequest } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!(await isAdminRequest())) {
     return NextResponse.json({ error: "Not authorized." }, { status: 401 });
   }
 
-  const id = Number(params.id);
+  const { id: idParam } = await params;
+  const id = Number(idParam);
   if (!Number.isInteger(id)) {
     return NextResponse.json({ error: "Invalid voter id." }, { status: 400 });
   }

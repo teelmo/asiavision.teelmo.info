@@ -1,6 +1,12 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-asia-bg: #0b0f1e;
+  --color-asia-panel: #121831;
+  --color-asia-accent: #ff3366;
+  --color-asia-accent2: #3dd6c5;
+  --color-asia-gold: #f4c542;
+}
 
 html,
 body {

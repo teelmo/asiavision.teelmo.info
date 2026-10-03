@@ -13,9 +13,10 @@ function Shell({ title, body }: { title: string; body: string }) {
   );
 }
 
-export default async function VotePage({ params }: { params: { token: string } }) {
+export default async function VotePage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
   const db = await getDB();
-  const voter = db.voters.find((v) => v.token === params.token);
+  const voter = db.voters.find((v) => v.token === token);
 
   if (!voter) {
     return (

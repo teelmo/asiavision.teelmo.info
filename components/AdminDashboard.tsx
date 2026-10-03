@@ -18,7 +18,7 @@ export function AdminDashboard() {
   const [threshold, setThreshold] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [origin, setOrigin] = useState("");
+  const [origin] = useState(() => (typeof window !== "undefined" ? window.location.origin : ""));
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/state", { cache: "no-store" });
@@ -32,7 +32,9 @@ export function AdminDashboard() {
   }, [router]);
 
   useEffect(() => {
-    setOrigin(window.location.origin);
+    // load()'s setState calls all happen after an await (same pattern as
+    // ResultsBoard's poll()); the rule can't see that through useCallback.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     const id = setInterval(load, POLL_MS);
     return () => clearInterval(id);
