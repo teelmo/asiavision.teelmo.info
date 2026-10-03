@@ -13,6 +13,7 @@ type ResultsResponse =
   | ({ state: "revealed"; results: RevealedCountry[] } & Progress);
 
 const POLL_MS = 4000;
+const POINT_VALUES = [12, 10, 8, -4] as const;
 
 function ProgressBar({ votedCount, totalVoters, threshold }: Progress) {
   const target = threshold > 0 ? threshold : totalVoters;
@@ -100,6 +101,13 @@ export function ResultsBoard() {
                   className="h-full bg-asia-gold"
                   style={{ width: `${Math.max(0, (c.points / max) * 100)}%` }}
                 />
+              </div>
+              <div className="mt-2 flex gap-3 text-xs text-slate-400">
+                {POINT_VALUES.map((p) => (
+                  <span key={p} className={p < 0 ? "text-red-400" : undefined}>
+                    {p > 0 ? `+${p}` : p}: {c.breakdown[String(p)] ?? 0}
+                  </span>
+                ))}
               </div>
             </li>
           ))}
