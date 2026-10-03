@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "data:wipe": "rm -f data/db.json"
+    "data:wipe": "rm -f data/db.json",
+    "sync-prod": "ssh teelmo@teelmo.info 'export PATH=/usr/share/nodejs/corepack/shims:$PATH && cd /var/www/asiavision.teelmo.info && git pull && npm install && npm run build && sudo systemctl restart asiavision'"
   },
   "repository": {
     "type": "git",
