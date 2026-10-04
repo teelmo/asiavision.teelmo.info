@@ -1,10 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Voter = { id: number; name: string; token: string; hasVoted: boolean; createdAt: string };
-type Settings = { voterThreshold: number; isFinalized: boolean; isRevealed: boolean };
+type Settings = {
+  voterThreshold: number;
+  isFinalized: boolean;
+  isRevealed: boolean;
+  actualRanking: number[] | null;
+};
 type Country = { id: number; code: string; name: string; flag: string };
 
 type State = { settings: Settings; voters: Voter[]; countries: Country[] };
@@ -16,9 +21,11 @@ export function AdminDashboard() {
   const [state, setState] = useState<State | null>(null);
   const [names, setNames] = useState("");
   const [threshold, setThreshold] = useState("");
+  const [ranking, setRanking] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [origin] = useState(() => (typeof window !== "undefined" ? window.location.origin : ""));
+  const rankingInitialized = useRef(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/state", { cache: "no-store" });
@@ -29,6 +36,10 @@ export function AdminDashboard() {
     const data = await res.json();
     setState(data);
     setThreshold((prev) => (prev === "" ? String(data.settings.voterThreshold || "") : prev));
+    if (!rankingInitialized.current) {
+      rankingInitialized.current = true;
+      setRanking(data.settings.actualRanking ?? data.countries.map((c: Country) => c.id));
+    }
   }, [router]);
 
   useEffect(() => {
@@ -109,6 +120,43 @@ export function AdminDashboard() {
     });
   }
 
+  function moveRanked(index: number, direction: -1 | 1) {
+    setRanking((prev) => {
+      const next = [...prev];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  async function saveActualResult() {
+    await withBusy(async () => {
+      const res = await fetch("/api/admin/actual-result", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ranking }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setMessage("Actual result saved!");
+      await load();
+    });
+  }
+
+  async function clearActualResult() {
+    await withBusy(async () => {
+      const res = await fetch("/api/admin/actual-result", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ranking: null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      await load();
+    });
+  }
+
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
     router.refresh();
@@ -126,8 +174,9 @@ export function AdminDashboard() {
 
   if (!state) return <p className="text-center text-slate-400">Loading…</p>;
 
-  const { settings, voters } = state;
+  const { settings, voters, countries } = state;
   const votedCount = voters.filter((v) => v.hasVoted).length;
+  const countryById = new Map(countries.map((c) => [c.id, c]));
 
   return (
     <div className="flex flex-col gap-8">
@@ -190,6 +239,71 @@ export function AdminDashboard() {
           >
             Reset poll (wipe votes)
           </button>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-700 bg-asia-panel p-5">
+        <h2 className="mb-3 text-lg font-bold">Actual result</h2>
+        <p className="mb-3 text-sm text-slate-400">
+          Once the real contest airs, order the countries from 1st to last. The results page will then show who
+          predicted it best.{" "}
+          <span className={settings.actualRanking ? "text-asia-gold" : "text-slate-500"}>
+            {settings.actualRanking ? "Saved." : "Not entered yet."}
+          </span>
+        </p>
+        <ol className="flex flex-col gap-2">
+          {ranking.map((id, i) => {
+            const country = countryById.get(id);
+            if (!country) return null;
+            return (
+              <li
+                key={id}
+                className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 px-3 py-2"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="w-6 text-right font-bold text-slate-500">{i + 1}</span>
+                  <span>{country.flag}</span>
+                  <span>{country.name}</span>
+                </span>
+                <span className="flex gap-1">
+                  <button
+                    onClick={() => moveRanked(i, -1)}
+                    disabled={i === 0}
+                    aria-label={`Move ${country.name} up`}
+                    className="rounded-full border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:border-asia-accent2 disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    onClick={() => moveRanked(i, 1)}
+                    disabled={i === ranking.length - 1}
+                    aria-label={`Move ${country.name} down`}
+                    className="rounded-full border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:border-asia-accent2 disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    ↓
+                  </button>
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+        <div className="mt-3 flex flex-wrap gap-3">
+          <button
+            onClick={saveActualResult}
+            disabled={busy}
+            className="rounded-full bg-asia-accent2 px-4 py-2 text-sm font-bold text-asia-bg disabled:opacity-40"
+          >
+            Save actual result
+          </button>
+          {settings.actualRanking && (
+            <button
+              onClick={clearActualResult}
+              disabled={busy}
+              className="rounded-full border border-red-500 px-4 py-2 text-sm font-bold text-red-400 disabled:opacity-40"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </section>
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDB } from "@/lib/store";
 import { COUNTRIES } from "@/lib/countries";
+import { computeAccuracy } from "@/lib/scoring";
 
 export const dynamic = "force-dynamic";
 
@@ -33,13 +34,27 @@ export async function GET() {
   });
 
   if (!settings.isFinalized) {
-    // Live, anonymous: order only, never the numbers behind it.
-    return NextResponse.json({
-      state: "live",
-      ranking: ranked.map((c) => ({ id: c.id, code: c.code, name: c.name, flag: c.flag })),
-      ...progress,
-    });
+    // Live: just the headcount, nothing about who's ahead.
+    return NextResponse.json({ state: "live", ...progress });
   }
+
+  const actualRanking = settings.actualRanking;
+  const actualResult = actualRanking
+    ? actualRanking
+        .map((id) => COUNTRIES.find((c) => c.id === id))
+        .filter((c): c is (typeof COUNTRIES)[number] => Boolean(c))
+        .map((c) => ({ id: c.id, code: c.code, name: c.name, flag: c.flag }))
+    : null;
+
+  const votersById = new Map(voters.map((v) => [v.id, v]));
+  const accuracy = actualRanking
+    ? votes
+        .map((vote) => ({
+          voterName: votersById.get(vote.voterId)?.name ?? "Unknown",
+          distance: computeAccuracy(vote.entries, actualRanking),
+        }))
+        .sort((a, b) => a.distance - b.distance)
+    : null;
 
   return NextResponse.json({
     state: "revealed",
@@ -51,6 +66,8 @@ export async function GET() {
       points: pointsByCountry.get(c.id) ?? 0,
       breakdown: breakdownByCountry.get(c.id) ?? {},
     })),
+    actualResult,
+    accuracy,
     ...progress,
   });
 }

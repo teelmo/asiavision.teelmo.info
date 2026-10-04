@@ -23,6 +23,9 @@ export type Settings = {
   voterThreshold: number;
   isFinalized: boolean;
   isRevealed: boolean;
+  // Real-world finishing order once the actual contest airs: country IDs
+  // from 1st place to last. Null until the host enters it.
+  actualRanking: number[] | null;
 };
 
 export type DB = {
@@ -37,14 +40,18 @@ function defaultDB(): DB {
     nextVoterId: 1,
     voters: [],
     votes: [],
-    settings: { voterThreshold: 0, isFinalized: false, isRevealed: false },
+    settings: { voterThreshold: 0, isFinalized: false, isRevealed: false, actualRanking: null },
   };
 }
 
 async function readDB(): Promise<DB> {
   try {
     const raw = await fs.readFile(DATA_FILE, "utf-8");
-    return JSON.parse(raw) as DB;
+    const db = JSON.parse(raw) as DB;
+    // Older data files predate actualRanking; backfill so callers don't
+    // have to special-case `undefined` vs `null`.
+    db.settings.actualRanking ??= null;
+    return db;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       return defaultDB();

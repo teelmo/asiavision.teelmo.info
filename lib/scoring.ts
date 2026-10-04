@@ -49,3 +49,38 @@ export function validateBallot(
 
   return { ok: true, entries: parsed };
 }
+
+export function validateActualRanking(
+  ranking: unknown,
+  validCountryIds: Set<number>
+): { ok: true; ranking: number[] } | { ok: false; error: string } {
+  if (!Array.isArray(ranking) || ranking.length !== validCountryIds.size) {
+    return { ok: false, error: `Ranking must include all ${validCountryIds.size} countries.` };
+  }
+  const seen = new Set<number>();
+  for (const id of ranking) {
+    if (typeof id !== "number" || !validCountryIds.has(id) || seen.has(id)) {
+      return { ok: false, error: "Ranking must list every country exactly once." };
+    }
+    seen.add(id);
+  }
+  return { ok: true, ranking: ranking as number[] };
+}
+
+// How far a ballot's 4 picks landed from where they'd need to finish to be
+// a perfect prediction: 12pts implies actual 1st, 10pts implies 2nd, 8pts
+// implies 3rd, -4pts implies last place. Lower total = more accurate.
+export function computeAccuracy(entries: BallotEntry[], actualRanking: number[]): number {
+  const idealPosition: Record<number, number> = {
+    12: 1,
+    10: 2,
+    8: 3,
+    "-4": actualRanking.length,
+  };
+  let distance = 0;
+  for (const entry of entries) {
+    const actualPos = actualRanking.indexOf(entry.countryId) + 1;
+    distance += Math.abs(actualPos - idealPosition[entry.points]);
+  }
+  return distance;
+}

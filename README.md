@@ -11,14 +11,28 @@ A small Next.js app for running Eurovision-style voting among your friends.
 - Each voter gets a unique, one-time voting link. They can't see anyone else's votes
   or vote twice.
 - The **results page** (`/results`) is public and updates every few seconds, but
-  while voting is open it only shows the current *ranking* — never the actual point
-  totals, so nobody can reverse-engineer who voted for what.
+  while voting is open it only shows how many people have voted so far — never any
+  ranking or point totals, so nobody can reverse-engineer who voted for what.
 - The host sets a "voters needed" threshold. Once that many people have voted, the
-  poll **finalizes**: voting closes, and the results page flips to a "locked" screen
-  that hides the ranking entirely.
+  poll **finalizes**: voting closes, and the results page flips to a "locked" screen.
 - The host can then hit **Reveal** whenever they're ready for the big moment — the
   results page switches to the full scoreboard with points. Hitting it again hides
   the board, in case you want to re-run the reveal live.
+
+## Predicting the real contest
+
+Once the actual contest airs, the host can enter its real finishing order in
+`/admin` (reorder the countries 1st to last with the ↑/↓ buttons, then **Save actual
+result**). Once that's saved and results are revealed, the `/results` page also
+shows:
+
+- **The real result** — the official finishing order.
+- **Closest predictions** — every voter's ballot ranked by how close their 12/10/8/-4
+  picks landed to where those countries actually finished (e.g. picking the actual
+  winner as your 12-pointer scores 0 for that pick). Lowest total distance wins.
+
+This is entirely separate from the friends' combined scoreboard above — one is "what
+did we as a group like best," the other is "who called the real result best."
 
 ## Storage: just a JSON file
 
